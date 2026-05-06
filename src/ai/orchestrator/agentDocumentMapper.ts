@@ -37,12 +37,10 @@ export function mapDocumentsToAgents(
     const lowerTipo = doc.tipo.toLowerCase();
     const lowerNome = doc.nome.toLowerCase();
 
-    // Check document type mappings
+    // Check document type mappings — match only on `tipo`, not filename
     for (const [agent, types] of Object.entries(AGENT_DOCUMENT_TYPES)) {
       const matched = types?.some(
-        (t) =>
-          lowerTipo.includes(t.toLowerCase()) ||
-          lowerNome.includes(t.toLowerCase()),
+        (t) => lowerTipo.includes(t.toLowerCase()),
       );
       if (matched) {
         const agentName = agent as AgentName;
@@ -71,6 +69,56 @@ export function mapDocumentsToAgents(
   }
 
   return map;
+}
+
+export const REQUIRED_GLOBAL_AGENTS: AgentName[] = [
+  "planta-agent",
+  "quadro-resumo-agent",
+  "fluxo-agent",
+  "termo-agent",
+  "ato-agent",
+];
+
+const REQUIRED_PERSON_AGENT_GROUPS: { label: string; agents: AgentName[] }[] = [
+  { label: "Identidade (CNH ou RG/CPF)", agents: ["cnh-agent", "rgcpf-agent"] },
+  { label: "Residência", agents: ["comprovante-residencia-agent", "declaracao-residencia-agent"] },
+  { label: "Estado Civil", agents: ["certidao-estado-civil-agent"] },
+  { label: "Renda", agents: ["comprovante-renda-agent", "carteira-trabalho-agent"] },
+];
+
+export type DownloadCompletenessResult = {
+  complete: boolean;
+  missing: string[];
+  message: string;
+};
+
+export function checkDownloadCompleteness(
+  documentMap: Map<string, DocumentContent[]>,
+  pessoas: string[],
+): DownloadCompletenessResult {
+  const missing: string[] = [];
+
+  for (const agent of REQUIRED_GLOBAL_AGENTS) {
+    if (!documentMap.has(agent)) {
+      missing.push(agent.replace(/-agent$/, "").replace(/-/g, " "));
+    }
+  }
+
+  for (const pessoa of pessoas) {
+    for (const group of REQUIRED_PERSON_AGENT_GROUPS) {
+      const hasAny = group.agents.some((a) => documentMap.has(`${a}:${pessoa}`));
+      if (!hasAny) {
+        missing.push(`${pessoa}: ${group.label}`);
+      }
+    }
+  }
+
+  const complete = missing.length === 0;
+  const message = complete
+    ? "Todos os arquivos foram baixados com sucesso."
+    : `Documentos ainda não validados por I.A.\n\nFaltam os seguintes arquivos para prosseguir: ${missing.join("; ")}.`;
+
+  return { complete, missing, message };
 }
 
 /**

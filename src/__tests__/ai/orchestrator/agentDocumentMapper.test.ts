@@ -1,4 +1,4 @@
-import { buildAgentInput, mapDocumentsToAgents, PERSON_AGENTS } from "@/ai/orchestrator/agentDocumentMapper";
+import { buildAgentInput, mapDocumentsToAgents, PERSON_AGENTS, checkDownloadCompleteness } from "@/ai/orchestrator/agentDocumentMapper";
 import type { DocumentContent } from "@/lib/cvcrm/documentDownloader";
 
 function makeTextDoc(overrides: Partial<DocumentContent> = {}): DocumentContent {
@@ -73,6 +73,30 @@ describe("mapDocumentsToAgents", () => {
     });
   });
 
+  describe("tipo-only matching for AGENT_DOCUMENT_TYPES", () => {
+    it("does not map ato-agent when filename contains 'ato' but tipo differs", () => {
+      const docs = [
+        makeTextDoc({ tipo: "Comprovante de Renda", nome: "RELATORIO-fulano.PDF", pessoa: "titular" }),
+        makeTextDoc({ tipo: "Carteira de Trabalho", nome: "CTPSContratosDigitais_123.pdf", pessoa: "titular" }),
+      ];
+      const map = mapDocumentsToAgents(docs);
+
+      expect(map.has("ato-agent")).toBe(false);
+      expect(map.has("comprovante-renda-agent:titular")).toBe(true);
+      expect(map.has("carteira-trabalho-agent:titular")).toBe(true);
+    });
+
+    it("maps ato-agent only when tipo is exactly Ato", () => {
+      const docs = [
+        makeTextDoc({ tipo: "Ato", nome: "ComprovantePagamento.pdf", pessoa: undefined }),
+      ];
+      const map = mapDocumentsToAgents(docs);
+
+      expect(map.has("ato-agent")).toBe(true);
+      expect(map.get("ato-agent")).toHaveLength(1);
+    });
+  });
+
   describe("PERSON_AGENTS constant", () => {
     it("includes identity and person-related agents", () => {
       expect(PERSON_AGENTS).toContain("rgcpf-agent");
@@ -85,6 +109,132 @@ describe("mapDocumentsToAgents", () => {
       expect(PERSON_AGENTS).not.toContain("fluxo-agent");
       expect(PERSON_AGENTS).not.toContain("quadro-resumo-agent");
       expect(PERSON_AGENTS).not.toContain("planta-agent");
+    });
+  });
+});
+
+describe("checkDownloadCompleteness", () => {
+  function makeMap(keys: string[]): Map<string, ReturnType<typeof makeTextDoc>[]> {
+    const m = new Map<string, ReturnType<typeof makeTextDoc>[]>();
+    for (const k of keys) m.set(k, [makeTextDoc()]);
+    return m;
+  }
+
+  const ALL_GLOBAL = ["planta-agent", "quadro-resumo-agent", "fluxo-agent", "termo-agent", "ato-agent"];
+
+  describe("complete: true", () => {
+    it("returns complete when all required global agents and person groups present (titular only)", () => {
+      const keys = [
+        ...ALL_GLOBAL,
+        "cnh-agent:titular",
+        "comprovante-residencia-agent:titular",
+        "certidao-estado-civil-agent:titular",
+        "comprovante-renda-agent:titular",
+      ];
+      const result = checkDownloadCompleteness(makeMap(keys), ["titular"]);
+      expect(result.complete).toBe(true);
+      expect(result.missing).toHaveLength(0);
+    });
+
+    it("accepts rgcpf-agent as alternative to cnh-agent for identity group", () => {
+      const keys = [
+        ...ALL_GLOBAL,
+        "rgcpf-agent:titular",
+        "declaracao-residencia-agent:titular",
+        "certidao-estado-civil-agent:titular",
+        "carteira-trabalho-agent:titular",
+      ];
+      const result = checkDownloadCompleteness(makeMap(keys), ["titular"]);
+      expect(result.complete).toBe(true);
+    });
+
+    it("returns complete with multiple pessoas when each has required groups", () => {
+      const keys = [
+        ...ALL_GLOBAL,
+        "cnh-agent:titular", "comprovante-residencia-agent:titular",
+        "certidao-estado-civil-agent:titular", "comprovante-renda-agent:titular",
+        "cnh-agent:fiador", "comprovante-residencia-agent:fiador",
+        "certidao-estado-civil-agent:fiador", "comprovante-renda-agent:fiador",
+      ];
+      const result = checkDownloadCompleteness(makeMap(keys), ["titular", "fiador"]);
+      expect(result.complete).toBe(true);
+    });
+  });
+
+  describe("complete: false — missing global agents", () => {
+    it("reports missing global agents", () => {
+      const keys = [
+        "quadro-resumo-agent", "fluxo-agent", "termo-agent", "ato-agent",
+        "cnh-agent:titular", "comprovante-residencia-agent:titular",
+        "certidao-estado-civil-agent:titular", "comprovante-renda-agent:titular",
+      ];
+      const result = checkDownloadCompleteness(makeMap(keys), ["titular"]);
+      expect(result.complete).toBe(false);
+      expect(result.missing).toContain("planta");
+    });
+
+    it("reports all missing global agents when map is empty", () => {
+      const result = checkDownloadCompleteness(new Map(), ["titular"]);
+      expect(result.complete).toBe(false);
+      expect(result.missing).toHaveLength(
+        5 + 4
+      );
+    });
+  });
+
+  describe("complete: false — missing person groups", () => {
+    it("reports missing identity group when neither cnh nor rgcpf present", () => {
+      const keys = [
+        ...ALL_GLOBAL,
+        "comprovante-residencia-agent:titular",
+        "certidao-estado-civil-agent:titular",
+        "comprovante-renda-agent:titular",
+      ];
+      const result = checkDownloadCompleteness(makeMap(keys), ["titular"]);
+      expect(result.complete).toBe(false);
+      expect(result.missing.some((m) => m.includes("titular") && m.includes("Identidade"))).toBe(true);
+    });
+
+    it("reports missing renda group when neither comprovante-renda nor carteira-trabalho present", () => {
+      const keys = [
+        ...ALL_GLOBAL,
+        "cnh-agent:titular",
+        "comprovante-residencia-agent:titular",
+        "certidao-estado-civil-agent:titular",
+      ];
+      const result = checkDownloadCompleteness(makeMap(keys), ["titular"]);
+      expect(result.complete).toBe(false);
+      expect(result.missing.some((m) => m.includes("Renda"))).toBe(true);
+    });
+
+    it("reports missing for specific pessoa — not for others that have groups", () => {
+      const keys = [
+        ...ALL_GLOBAL,
+        "cnh-agent:titular", "comprovante-residencia-agent:titular",
+        "certidao-estado-civil-agent:titular", "comprovante-renda-agent:titular",
+        // fiador missing all person docs
+      ];
+      const result = checkDownloadCompleteness(makeMap(keys), ["titular", "fiador"]);
+      expect(result.complete).toBe(false);
+      expect(result.missing.every((m) => m.includes("fiador"))).toBe(true);
+    });
+  });
+
+  describe("message format", () => {
+    it("returns success message when complete", () => {
+      const keys = [
+        ...ALL_GLOBAL,
+        "cnh-agent:titular", "comprovante-residencia-agent:titular",
+        "certidao-estado-civil-agent:titular", "comprovante-renda-agent:titular",
+      ];
+      const result = checkDownloadCompleteness(makeMap(keys), ["titular"]);
+      expect(result.message).toContain("sucesso");
+    });
+
+    it("lists missing items in message when incomplete", () => {
+      const result = checkDownloadCompleteness(new Map(), ["titular"]);
+      expect(result.message).toContain("Faltam");
+      expect(result.message).toContain("planta");
     });
   });
 });

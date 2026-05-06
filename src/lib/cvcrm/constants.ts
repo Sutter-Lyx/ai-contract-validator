@@ -116,7 +116,9 @@ export function filterDocuments(
   const filtered: Record<string, Array<{ tipo: string;[key: string]: unknown }>> = {};
   for (const [group, docs] of Object.entries(documentos)) {
     if (!Array.isArray(docs)) continue;
-    const validDocs = docs.filter((d) => isAllowedDocumentType(d.tipo));
+    const validDocs = docs.filter(
+      (d) => isAllowedDocumentType(d.tipo) && d['situacao'] !== 'Reprovado',
+    );
     if (validDocs.length > 0) {
       filtered[group] = validDocs;
     }
