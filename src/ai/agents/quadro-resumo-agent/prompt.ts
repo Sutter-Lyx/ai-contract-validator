@@ -103,6 +103,7 @@ FINANCEIRO:
 - sinal_ato: Valor pago no ato/sinal/entrada.
 - financiamento_bancario: Valor exato do financiamento (Item I).
 - subsidio_total: Soma de todos os subsídios (incluindo Casa Fácil/COHAPAR do item H) e/ou valor através de conta vinculada FGTS.
+- EXCEÇÃO RENO / JERSEY: Nesses empreendimentos, aplique a seguinte regra: não existem parcelas (pós-chaves, balão ou parcela de chaves), todas são consideradas grupo de parcela mensal ate mesmo parcelas unicas, junte todas no mesmo grupo.
 
 ### EXCEÇÃO CASO SEJA JERSEY CITY OU RENO:
 Neste empreendimento específico ("JERSEY CITY" ou "RENO"), aplique duas regras exclusivas:
