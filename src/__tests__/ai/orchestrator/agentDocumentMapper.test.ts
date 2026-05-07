@@ -10,6 +10,7 @@ function makeTextDoc(overrides: Partial<DocumentContent> = {}): DocumentContent 
     text: "NOME: João Silva\nCPF: 12345678900",
     link: "https://example.com/cnh.pdf",
     pessoa: "titular",
+    source: "documento",
     ...overrides,
   };
 }
@@ -20,6 +21,7 @@ function makeTextDocWithPdf(overrides: Partial<DocumentContent> = {}): DocumentC
     imageData: Buffer.from("fake-pdf-content"),
     imageMimeType: "application/pdf",
     pessoa: "titular",
+    source: "documento",
     ...overrides,
   };
 }
@@ -34,6 +36,21 @@ function makeImageDoc(overrides: Partial<DocumentContent> = {}): DocumentContent
     imageMimeType: "image/jpeg",
     link: "https://example.com/rg.jpg",
     pessoa: "titular",
+    source: "documento",
+    ...overrides,
+  };
+}
+
+function makeContractDoc(overrides: Partial<DocumentContent> = {}): DocumentContent {
+  return {
+    documentId: 99,
+    nome: "Quadro Resumo v2.0.pdf",
+    tipo: "Venda",
+    contentType: "text",
+    text: "conteúdo do contrato",
+    link: "https://example.com/quadro.pdf",
+    pessoa: undefined,
+    source: "contrato",
     ...overrides,
   };
 }
@@ -63,9 +80,9 @@ describe("mapDocumentsToAgents", () => {
       expect(map.has("fluxo-agent:titular")).toBe(false);
     });
 
-    it("creates simple key when pessoa is undefined (contracts)", () => {
+    it("creates simple key when source is contrato (contracts)", () => {
       const docs = [
-        makeTextDoc({ tipo: "Venda", nome: "Quadro Resumo v2.0", pessoa: undefined }),
+        makeContractDoc({ nome: "Quadro Resumo v2.0", tipo: "Venda", pessoa: undefined }),
       ];
       const map = mapDocumentsToAgents(docs);
 
@@ -94,6 +111,56 @@ describe("mapDocumentsToAgents", () => {
 
       expect(map.has("ato-agent")).toBe(true);
       expect(map.get("ato-agent")).toHaveLength(1);
+    });
+  });
+
+  describe("source-based routing", () => {
+    it("contract doc with nome='Quadro Resumo - Revenda' maps to quadro-resumo-agent regardless of tipo", () => {
+      const docs = [
+        makeContractDoc({ nome: "Quadro Resumo - Revenda.pdf", tipo: "Venda" }),
+      ];
+      const map = mapDocumentsToAgents(docs);
+
+      expect(map.has("quadro-resumo-agent")).toBe(true);
+      expect(map.get("quadro-resumo-agent")).toHaveLength(1);
+    });
+
+    it("contract doc with nome='Planta - Tipo B.pdf' maps to planta-agent", () => {
+      const docs = [
+        makeContractDoc({ nome: "Planta - Tipo B.pdf", tipo: "Outro" }),
+      ];
+      const map = mapDocumentsToAgents(docs);
+
+      expect(map.has("planta-agent")).toBe(true);
+    });
+
+    it("documento pessoal with nome containing 'planta' does NOT map to planta-agent — only tipo matters", () => {
+      const docs = [
+        makeTextDoc({ tipo: "RG Principal", nome: "planta_rg.pdf", pessoa: "titular" }),
+      ];
+      const map = mapDocumentsToAgents(docs);
+
+      expect(map.has("planta-agent")).toBe(false);
+      expect(map.has("rgcpf-agent:titular")).toBe(true);
+    });
+
+    it("contract doc does NOT match AGENT_DOCUMENT_TYPES even if tipo matches", () => {
+      const docs = [
+        makeContractDoc({ nome: "Contrato Compra Venda.pdf", tipo: "RG Principal" }),
+      ];
+      const map = mapDocumentsToAgents(docs);
+
+      expect(map.has("rgcpf-agent")).toBe(false);
+      expect(map.size).toBe(0);
+    });
+
+    it("contract doc with unrecognized nome maps to nothing", () => {
+      const docs = [
+        makeContractDoc({ nome: "Instrumento Particular.pdf", tipo: "Venda" }),
+      ];
+      const map = mapDocumentsToAgents(docs);
+
+      expect(map.size).toBe(0);
     });
   });
 

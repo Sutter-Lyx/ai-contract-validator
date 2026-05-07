@@ -34,36 +34,33 @@ export function mapDocumentsToAgents(
   for (const doc of contents) {
     if (doc.error) continue;
 
-    const lowerTipo = doc.tipo.toLowerCase();
-    const lowerNome = doc.nome.toLowerCase();
-
-    // Check document type mappings — match only on `tipo`, not filename
-    for (const [agent, types] of Object.entries(AGENT_DOCUMENT_TYPES)) {
-      const matched = types?.some(
-        (t) => lowerTipo.includes(t.toLowerCase()),
-      );
-      if (matched) {
-        const agentName = agent as AgentName;
-        const key = PERSON_AGENTS.includes(agentName) && doc.pessoa
-          ? `${agent}:${doc.pessoa}`
-          : agent;
-        const existing = map.get(key) ?? [];
-        existing.push(doc);
-        map.set(key, existing);
+    if (doc.source === "contrato") {
+      // Contracts: match only by nome (tipo is always "Venda"/"Outro" — meaningless)
+      const lowerNome = doc.nome.toLowerCase();
+      for (const [agent, namePatterns] of Object.entries(AGENT_CONTRACT_NAMES)) {
+        const matched = namePatterns?.some((pattern) =>
+          lowerNome.includes(pattern.toLowerCase()),
+        );
+        if (matched) {
+          const existing = map.get(agent) ?? [];
+          existing.push(doc);
+          map.set(agent, existing);
+        }
       }
-    }
-
-    // Check contract name mappings (contracts have no pessoa — always global)
-    for (const [agent, namePatterns] of Object.entries(AGENT_CONTRACT_NAMES)) {
-      const matched = namePatterns?.some(
-        (pattern) =>
-          lowerNome.includes(pattern.toLowerCase()) ||
-          lowerTipo.includes(pattern.toLowerCase()),
-      );
-      if (matched) {
-        const existing = map.get(agent) ?? [];
-        existing.push(doc);
-        map.set(agent, existing);
+    } else {
+      // Personal documents: match only by tipo (nome can be anything)
+      const lowerTipo = doc.tipo.toLowerCase();
+      for (const [agent, types] of Object.entries(AGENT_DOCUMENT_TYPES)) {
+        const matched = types?.some((t) => lowerTipo.includes(t.toLowerCase()));
+        if (matched) {
+          const agentName = agent as AgentName;
+          const key = PERSON_AGENTS.includes(agentName) && doc.pessoa
+            ? `${agent}:${doc.pessoa}`
+            : agent;
+          const existing = map.get(key) ?? [];
+          existing.push(doc);
+          map.set(key, existing);
+        }
       }
     }
   }
